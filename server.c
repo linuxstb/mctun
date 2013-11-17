@@ -17,36 +17,31 @@
 
 int main(int argc, char *argv[])
 {
-  int listenfd[NUM_LINKS];
+  int listenfd;
   int connfd[NUM_LINKS];
-  struct sockaddr_in serv_addr[NUM_LINKS];
+  struct sockaddr_in serv_addr;
   int i;
-  char sendBuff[BLOCK_SIZE+sizeof(uint64_t)];  // TODO: Tweak this.  For now, just try something under the MTU size
-  time_t ticks; 
   char buf[NUM_LINKS * BLOCK_SIZE];
 
-  memset(sendBuff, '0', sizeof(sendBuff)); 
+  memset(&serv_addr, '0', sizeof(serv_addr));
 
-  for (i=0;i<NUM_LINKS;i++) {
-    listenfd[i] = socket(AF_INET, SOCK_STREAM, 0);
-    memset(&serv_addr[i], '0', sizeof(serv_addr[0]));
-
-    serv_addr[i].sin_family = AF_INET;
-    serv_addr[i].sin_addr.s_addr = htonl(INADDR_ANY);
-    serv_addr[i].sin_port = htons(4444+i);
+  serv_addr.sin_family = AF_INET;
+  serv_addr.sin_addr.s_addr = htonl(INADDR_ANY);
+  serv_addr.sin_port = htons(4444);
   
-    int res = bind(listenfd[i], (struct sockaddr*)&serv_addr[i], sizeof(serv_addr[0])); 
+  listenfd = socket(AF_INET, SOCK_STREAM, 0);
 
-    if (res < 0) {
-      perror("Bind error:");
-      return 0;
-    }
-    listen(listenfd[i], 10); 
+  int res = bind(listenfd, (struct sockaddr*)&serv_addr, sizeof(serv_addr)); 
+
+  if (res < 0) {
+    perror("Bind error:");
+    return 0;
   }
+  listen(listenfd, 10); 
 
   for (i=0;i<NUM_LINKS;i++) {
-    fprintf(stderr,"Waiting for socket %d\n",4444+i);
-    connfd[i] = accept(listenfd[i], (struct sockaddr*)NULL, NULL);
+    fprintf(stderr,"Waiting for connection %d\n",i);
+    connfd[i] = accept(listenfd, (struct sockaddr*)NULL, NULL);
     int on = 1;
     if (ioctl(connfd[i], (int)FIONBIO, (char *)&on))
       {
@@ -56,10 +51,6 @@ int main(int argc, char *argv[])
   }
 
   fprintf(stderr,"We now have %d connections, start sending data\n",NUM_LINKS);
-
-  ticks = time(NULL);
-  //  snprintf(sendBuff, sizeof(sendBuff), "%.24s\r\n", ctime(&ticks));
-  //  write(connfd[0], sendBuff, strlen(sendBuff)); 
 
   int counts[NUM_LINKS];
   for (i=0;i<NUM_LINKS;i++) { counts[i] = 0; }
@@ -82,7 +73,6 @@ int main(int argc, char *argv[])
     while (byteswritten < NUM_LINKS * BLOCK_SIZE) {
       for (i=0;i<NUM_LINKS;i++) {
         if (x[i] == 0) {
-          int towrite = 8;
           int written = 0;
           while (written < 8) {
             int n = write(connfd[i],&blockno + written,8 - written);

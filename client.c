@@ -123,9 +123,22 @@ int main(int argc, char *argv[])
   int sockfd[NUM_LINKS];
   int i,n;
   char recvBuff[1024];
-  struct sockaddr_in serv_addr[NUM_LINKS]; 
+  struct sockaddr_in serv_addr;
 
     memset(recvBuff, '0',sizeof(recvBuff));
+
+      memset(&serv_addr, '0', sizeof(serv_addr)); 
+
+      serv_addr.sin_family = AF_INET;
+      serv_addr.sin_port = htons(4444);
+
+      if(inet_pton(AF_INET, argv[1], &serv_addr.sin_addr)<=0)
+      {
+        printf("\n inet_pton error occured\n");
+        return 1;
+      } 
+
+
     for (i=0;i<NUM_LINKS;i++) {
       if((sockfd[i] = socket(AF_INET, SOCK_STREAM, 0)) < 0)
       {
@@ -133,18 +146,7 @@ int main(int argc, char *argv[])
         return 1;
       } 
 
-      memset(&serv_addr[i], '0', sizeof(serv_addr[0])); 
-
-      serv_addr[i].sin_family = AF_INET;
-      serv_addr[i].sin_port = htons(4444+i);
-
-      if(inet_pton(AF_INET, argv[1], &serv_addr[i].sin_addr)<=0)
-      {
-        printf("\n inet_pton error occured\n");
-        return 1;
-      } 
-
-      if( connect(sockfd[i], (struct sockaddr *)&serv_addr[i], sizeof(serv_addr[0])) < 0)
+      if( connect(sockfd[i], (struct sockaddr *)&serv_addr, sizeof(serv_addr)) < 0)
       {
        printf("\n Error : Connect Failed \n");
        return 1;
@@ -202,7 +204,7 @@ int main(int argc, char *argv[])
         empty_queue();
       }
       if (get_time() > last_time + 1000.0) {
-        fprintf(stderr,"%d bits/s\n",bytesread*8);
+        fprintf(stderr,"%d bits/s (%dKB/s)\n",bytesread*8,bytesread/1024);
         bytesread = 0;
         last_time = get_time();
       }
