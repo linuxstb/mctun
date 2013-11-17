@@ -138,7 +138,7 @@ int main(int argc, char *argv[])
       serv_addr[i].sin_family = AF_INET;
       serv_addr[i].sin_port = htons(4444+i);
 
-      if(inet_pton(AF_INET, argv[0], &serv_addr[i].sin_addr)<=0)
+      if(inet_pton(AF_INET, argv[1], &serv_addr[i].sin_addr)<=0)
       {
         printf("\n inet_pton error occured\n");
         return 1;
