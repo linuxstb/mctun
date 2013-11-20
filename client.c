@@ -25,17 +25,18 @@ void dump_queue(void)
   unsigned char* p = qbuf;
   for (i=0;i<blocks_in_queue;i++) {
     b = *(int64_t*)p;
-    fprintf(stderr,"%d: %lld\n",i,b);
+    fprintf(stderr,"%d: %d\n",i,(int)b);
     p += BLOCK_SIZE + 8;
   }
 }
 
-void empty_queue(void)
+void empty_queue(int sockfd)
 {
   int i = 0;
   int64_t b;
   unsigned char* p = qbuf;
   int blocks_to_write = 0;
+
   while (i < blocks_in_queue) {
     b = *(int64_t*)p;
     if (b == last_block_written + 1 + i) {
@@ -52,7 +53,7 @@ void empty_queue(void)
 
   p = qbuf;
   for (i=0;i<blocks_to_write;i++) {
-    int n = write(1,p + 8, BLOCK_SIZE);
+    int n = write(sockfd, p + 8, BLOCK_SIZE);
     if (n != BLOCK_SIZE) {
       fprintf(stderr,"Short write: %d\n",n);
     }
@@ -120,74 +121,115 @@ double get_time(void)
 
 int main(int argc, char *argv[])
 {
-  int sockfd[NUM_LINKS];
+  int connfd[NUM_LINKS];
+  int sockfd;
+  int listenfd;
   int i,n;
-  char recvBuff[1024];
-  struct sockaddr_in serv_addr;
+  struct sockaddr_in serv_addr, local_addr;
+  int res;
 
-    memset(recvBuff, '0',sizeof(recvBuff));
+  if (argc != 4) {
+    fprintf(stderr,"client remote-ip remote-port local-port\n");
+    return 1;
+  }
 
-      memset(&serv_addr, '0', sizeof(serv_addr)); 
+  /* Listen on any address, and local-port (argv[3]) */
+  memset(&local_addr, '0', sizeof(local_addr));
 
-      serv_addr.sin_family = AF_INET;
-      serv_addr.sin_port = htons(4444);
+  local_addr.sin_family = AF_INET;
+  local_addr.sin_addr.s_addr = htonl(INADDR_ANY);
+  local_addr.sin_port = htons(atoi(argv[3]));
+  
+  listenfd = socket(AF_INET, SOCK_STREAM, 0);
 
-      if(inet_pton(AF_INET, argv[1], &serv_addr.sin_addr)<=0)
-      {
-        printf("\n inet_pton error occured\n");
-        return 1;
-      } 
+  res = bind(listenfd, (struct sockaddr*)&local_addr, sizeof(local_addr)); 
+
+  if (res < 0) {
+    perror("Bind error:");
+    return 0;
+  }
+  listen(listenfd, 10); 
+
+  fprintf(stderr,"Waiting for connection on port %s\n",argv[3]);
+  sockfd = accept(listenfd, (struct sockaddr*)NULL, NULL);
+  int on = 1;
+  if (ioctl(sockfd, (int)FIONBIO, (char *)&on))
+  {
+    fprintf(stderr,"ioctl FIONBIO call failed\n");
+  }
+  fprintf(stderr,"Accepted.\n");
+
+
+  /* Now connect to server */
+  memset(&serv_addr, '0', sizeof(serv_addr)); 
+
+  serv_addr.sin_family = AF_INET;
+  serv_addr.sin_port = htons(atoi(argv[2]));
+
+  if(inet_pton(AF_INET, argv[1], &serv_addr.sin_addr)<=0)
+  {
+    printf("\n inet_pton error occured\n");
+    return 1;
+  } 
 
 
     for (i=0;i<NUM_LINKS;i++) {
-      if((sockfd[i] = socket(AF_INET, SOCK_STREAM, 0)) < 0)
+      if((connfd[i] = socket(AF_INET, SOCK_STREAM, 0)) < 0)
       {
         printf("\n Error : Could not create socket \n");
         return 1;
       } 
 
-      if( connect(sockfd[i], (struct sockaddr *)&serv_addr, sizeof(serv_addr)) < 0)
+      if( connect(connfd[i], (struct sockaddr *)&serv_addr, sizeof(serv_addr)) < 0)
       {
        printf("\n Error : Connect Failed \n");
        return 1;
       } 
 
       int on = 1;
-      if (ioctl(sockfd[i], (int)FIONBIO, (char *)&on))
+      if (ioctl(connfd[i], (int)FIONBIO, (char *)&on))
 	{
 	  printf("ioctl FIONBIO call failed\n");
 	}
 
-      printf("Connected on socket %d\n",4444+i);
+      printf("Connection %d connected\n",i);
     }
 
-    fd_set active_fd_set;
+    fd_set readfds;
      
     /* Initialize the set of active sockets. */
-    FD_ZERO (&active_fd_set);
+    FD_ZERO (&readfds);
     int max_fd = 0;
     for (i = 0; i < NUM_LINKS; i++) {
-      FD_SET (sockfd[i], &active_fd_set);
-      if (sockfd[i] > max_fd) { max_fd = sockfd[i]; }
+      FD_SET (connfd[i], &readfds);
+      if (connfd[i] > max_fd) { max_fd = connfd[i]; }
     }
     max_fd++;
-    fprintf(stderr,"%d %d %d - max_fd=%d\n",sockfd[0],sockfd[1],sockfd[2],max_fd);
+    fprintf(stderr,"%d %d %d - max_fd=%d\n",connfd[0],connfd[1],connfd[2],max_fd);
 
     double last_time = get_time();
-
 
     int bytesread = 0;
     unsigned char buf[NUM_LINKS][BLOCK_SIZE+8];
     int x[NUM_LINKS];
+    char inbuf[1024];
     for (i=0;i<NUM_LINKS;i++) { x[i] = 0; }
     while (1) {
-      n = select(max_fd, &active_fd_set, NULL, NULL, NULL);
+      n = read(sockfd, inbuf, sizeof(inbuf));
+      if (n > 0) {
+        fprintf(stderr,"Read %d bytes from sockfd\n",(int)n);
+        int n2 = write(connfd[0], inbuf, n);
+        fprintf(stderr,"Wrote %d bytes to connfd[0] - res=%d\n",(int)n, (int)n2);
+      }
+
+      n = select(max_fd, &readfds, NULL, NULL, NULL);
+      n = 1;
       if (n < 0) { 
         perror("select failed");
       } else {
         for (i = 0; i < NUM_LINKS; i++) {
-	  //          if (FD_ISSET(sockfd[i],&active_fd_set)) {  // This doesn't seem to work!a
-            n = read(sockfd[i], buf[i]+x[i], BLOCK_SIZE+8-x[i]); 
+	  //          if (FD_ISSET(connfd[i],&active_fd_set)) {  // This doesn't seem to work!a
+            n = read(connfd[i], buf[i]+x[i], BLOCK_SIZE+8-x[i]); 
             if (n > 0) {
 	      //fprintf(stderr,"Read %d from %d\n",n,i);
               bytesread += n;
@@ -201,7 +243,7 @@ int main(int argc, char *argv[])
             }
 	    //          }
         }
-        empty_queue();
+        empty_queue(sockfd);
       }
       if (get_time() > last_time + 1000.0) {
         fprintf(stderr,"%d bits/s (%dKB/s)\n",bytesread*8,bytesread/1024);

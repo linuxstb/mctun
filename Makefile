@@ -6,4 +6,5 @@ client: client.c common.h
 server: server.c common.h
 	gcc -W -Wall -o server server.c
 
-
+clean:
+	rm -f client server
