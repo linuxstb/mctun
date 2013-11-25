@@ -127,6 +127,7 @@ int main(int argc, char *argv[])
   int i,n;
   struct sockaddr_in serv_addr, local_addr;
   int res;
+  int on = 1;
 
   if (argc != 4) {
     fprintf(stderr,"client remote-ip remote-port local-port\n");
@@ -142,6 +143,18 @@ int main(int argc, char *argv[])
   
   listenfd = socket(AF_INET, SOCK_STREAM, 0);
 
+  /*************************************************************/
+  /* Allow socket descriptor to be reuseable                   */
+  /*************************************************************/
+  int rc = setsockopt(listenfd, SOL_SOCKET,  SO_REUSEADDR,
+                  (char *)&on, sizeof(on));
+  if (rc < 0)
+    {
+      perror("setsockopt() failed");
+      close(listenfd);
+      exit(-1);
+    }
+
   res = bind(listenfd, (struct sockaddr*)&local_addr, sizeof(local_addr)); 
 
   if (res < 0) {
@@ -152,7 +165,6 @@ int main(int argc, char *argv[])
 
   fprintf(stderr,"Waiting for connection on port %s\n",argv[3]);
   sockfd = accept(listenfd, (struct sockaddr*)NULL, NULL);
-  int on = 1;
   if (ioctl(sockfd, (int)FIONBIO, (char *)&on))
   {
     fprintf(stderr,"ioctl FIONBIO call failed\n");

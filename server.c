@@ -24,6 +24,7 @@ int main(int argc, char *argv[])
   int i;
   char buf[NUM_LINKS * BLOCK_SIZE];
   int res;
+  int on = 1;
 
   if (argc != 4) {
     fprintf(stderr,"Usage: server server-ip server-port local-port\n");
@@ -39,6 +40,18 @@ int main(int argc, char *argv[])
   
   listenfd = socket(AF_INET, SOCK_STREAM, 0);
 
+  /*************************************************************/
+  /* Allow socket descriptor to be reuseable                   */
+  /*************************************************************/
+  int rc = setsockopt(listenfd, SOL_SOCKET,  SO_REUSEADDR,
+                  (char *)&on, sizeof(on));
+  if (rc < 0)
+    {
+      perror("setsockopt() failed");
+      close(listenfd);
+      exit(-1);
+    }
+
   res = bind(listenfd, (struct sockaddr*)&local_addr, sizeof(local_addr)); 
 
   if (res < 0) {
@@ -50,7 +63,6 @@ int main(int argc, char *argv[])
   for (i=0;i<NUM_LINKS;i++) {
     fprintf(stderr,"Waiting for connection %d\n",i);
     connfd[i] = accept(listenfd, (struct sockaddr*)NULL, NULL);
-    int on = 1;
     if (ioctl(connfd[i], (int)FIONBIO, (char *)&on))
       {
 	printf("ioctl FIONBIO call failed\n");
@@ -85,7 +97,6 @@ int main(int argc, char *argv[])
     return 1;
   } 
 
-  int on = 1;
   if (ioctl(sockfd, (int)FIONBIO, (char *)&on)) {
     fprintf(stderr,"ioctl FIONBIO call failed\n");
   }
